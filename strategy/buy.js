@@ -16,13 +16,28 @@ const BuyStrategy = {
         // 价格
         { type: STRATEGY_TYPES.KEY_PRICE, value: 0.004 },
         // 账户跨桥的金额
-        { type: STRATEGY_TYPES.ACCOUNT_BRIDGED_AMOUNT, value: 0.6 },
+        { type: STRATEGY_TYPES.ACCOUNT_BRIDGED_AMOUNT, value: 0.2 },
         // 账户 nonce
         { type: STRATEGY_TYPES.ACCOUNT_NONCE, value: 5 },
         // 推特关注数
-        { type: STRATEGY_TYPES.TWITTER_FOLLOWERS, value: 18000 },
+        { type: STRATEGY_TYPES.TWITTER_FOLLOWERS, value: 15000 },
         // 推特文章数
         { type: STRATEGY_TYPES.TWITTER_POSTS, value: 100 },
+      ],
+    },
+    {
+      operator: STRATEGY_OPERATORS.AND,
+      conditions: [
+        // 价格
+        { type: STRATEGY_TYPES.KEY_PRICE, value: 0.05 },
+        // 账户跨桥的金额
+        { type: STRATEGY_TYPES.ACCOUNT_BRIDGED_AMOUNT, value: 0.8 },
+        // 账户 nonce
+        { type: STRATEGY_TYPES.ACCOUNT_NONCE, value: 5 },
+        // 推特关注数
+        { type: STRATEGY_TYPES.TWITTER_FOLLOWERS, value: 30000 },
+        // 推特文章数
+        { type: STRATEGY_TYPES.TWITTER_POSTS, value: 200 },
       ],
     },
     {

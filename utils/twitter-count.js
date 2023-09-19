@@ -3,6 +3,7 @@ import { sleep, getPropByStringPath } from ".";
 
 async function getTwitterUserInfo(username) {
   const browser = await puppeteer.launch({
+    executablePath: '/snap/bin/chromium',
     headless: "new",
     args: ['--no-sandbox']
   });

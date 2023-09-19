@@ -48,7 +48,7 @@ const contractAddress = "0xcf205808ed36593aa40a44f10c7f7c2f67d4a4d4";
 const publicClient = createPublicClient({
   chain: base,
   transport: http(
-    "https://wispy-powerful-orb.base-mainnet.discover.quiknode.pro/cc8ac8c030aabc330964740394e79d2d9de9ecdc/"
+    "https://base-mainnet.g.alchemy.com/v2/-_DrqGeDe2vmH51uRD-Rnka8d_n1GlAY"
   ),
 });
 const contract = getContract({
@@ -60,7 +60,7 @@ const contract = getContract({
 const websocketClient = createPublicClient({
   chain: base,
   transport: webSocket(
-    "wss://wispy-powerful-orb.base-mainnet.discover.quiknode.pro/cc8ac8c030aabc330964740394e79d2d9de9ecdc/"
+    "wss://base-mainnet.g.alchemy.com/v2/-_DrqGeDe2vmH51uRD-Rnka8d_n1GlAY"
   ),
 });
 const BASE_SCAN_API = "GWV3I6MRRIIDB1RA4UAIYAYGJ4KCGRR5ME";
@@ -138,8 +138,8 @@ const main = async (wallet) => {
           )
         );
         await checkIfBuy(logs);
-      }, 2000),
-      // 每 2 秒执行一次，因为频率太高，获取推特的关注人数方法会有问题() => checkIfBuy(logs)
+      }, 3000),
+      // 每 3 秒执行一次，因为频率太高，获取推特的关注人数方法会有问题() => checkIfBuy(logs)
     });
   };
 
