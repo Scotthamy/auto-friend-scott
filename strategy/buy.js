@@ -49,6 +49,8 @@ const BuyStrategy = {
       ],
     },
   ],
+  // 如果一个 key 是由 bots 列表内的地址出售的，不考虑买入
+  skipSoldByBot: false,
 };
 /** 不自动购买的地址, 可以把一些假号或者买过了知道会亏的放这里面 */
 const notBuyList = [

@@ -19,7 +19,6 @@ import {
   webSocket,
   parseGwei,
   decodeFunctionData,
-  parseAbiItem,
   formatEther,
 } from "viem";
 import { base } from "viem/chains";
@@ -30,8 +29,10 @@ import pkg from "lodash";
 import readlineSync from "readline-sync";
 import { couldBeSold, getMaxPrice } from "./strategy";
 import {
+  BOT_JUDGED_NONCE,
   couldBeBought,
   isWhitelisted,
+  readBotJSON,
   shouldBuy,
   shouldFetchBridgedAmount,
   shouldFetchNonce,
@@ -183,9 +184,10 @@ const main = async (wallet) => {
           if (log.args.ethAmount === BigInt(0)) {
             console.log(chalk.yellow("new User", log.args.subject));
           }
+
           return (
             parseFloat(formatEther(log.args.ethAmount)) < maxBuyPrice &&
-            couldBeBought(log.args.subject)
+            couldBeBought(log.args)
           );
         });
         for (const log of filterLogs) {
@@ -204,7 +206,7 @@ const main = async (wallet) => {
               accountInfo.nonce = await publicClient.getTransactionCount({
                 address: keyInfo.subject,
               });
-              if (accountInfo.nonce > 200) {
+              if (accountInfo.nonce > BOT_JUDGED_NONCE) {
                 console.log(`nonce: ${accountInfo.nonce}`);
                 await checkAndUpdateBotJSON(keyInfo.subject);
               }
@@ -307,6 +309,7 @@ const main = async (wallet) => {
   };
 
   const refreshHoldings = async () => {
+    await freshNonce();
     try {
       const res = await axios({
         method: "get",
@@ -374,7 +377,11 @@ const main = async (wallet) => {
       });
       const subject = args[0].toString().toLowerCase();
       if (subjectMap[subject]) {
-        subjectMap[subject].cost = calculateTransactionCost(transaction);
+        if (subjectMap[subject].cost) {
+          subjectMap[subject].cost = BigInt(subjectMap[subject].cost) + BigInt(calculateTransactionCost(transaction));
+        } else {
+          subjectMap[subject].cost = calculateTransactionCost(transaction);
+        }
         subjectMap[subject].holdingDuration = hoursSinceCreatedAt(
           transaction.timeStamp
         );
@@ -579,7 +586,7 @@ const main = async (wallet) => {
   };
 
   const trySell = async (share) => {
-    const price = await getSellPrice(share.subject);
+    const price = await getSellPrice(share.subject, share.balance);
     console.log(share.subject, share.name, "balance: ", share.balance);
     const ethPrice = parseFloat(formatEther(price).substring(0, 8)) * 0.9;
     const costEthPrice = parseFloat(formatEther(share.cost).substring(0, 8));
@@ -637,6 +644,11 @@ const main = async (wallet) => {
   };
 
   const execute = async () => {
+    // Read bots.json immediately upon starting the script
+    readBotJSON();
+
+    // Set an interval to read bots.json every 30 minutes (1800000 milliseconds)
+    setInterval(readBotJSON, 1800000);
     if (unwatch) {
       await unwatch();
     }
