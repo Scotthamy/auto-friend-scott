@@ -49,7 +49,7 @@ const contractAddress = "0xcf205808ed36593aa40a44f10c7f7c2f67d4a4d4";
 const publicClient = createPublicClient({
   chain: base,
   transport: http(
-    "https://base-mainnet.g.alchemy.com/v2/-_DrqGeDe2vmH51uRD-Rnka8d_n1GlAY"
+    "https://wispy-powerful-orb.base-mainnet.discover.quiknode.pro/cc8ac8c030aabc330964740394e79d2d9de9ecdc/"
   ),
 });
 const contract = getContract({
@@ -61,7 +61,7 @@ const contract = getContract({
 const websocketClient = createPublicClient({
   chain: base,
   transport: webSocket(
-    "wss://base-mainnet.g.alchemy.com/v2/-_DrqGeDe2vmH51uRD-Rnka8d_n1GlAY"
+    "wss://wispy-powerful-orb.base-mainnet.discover.quiknode.pro/cc8ac8c030aabc330964740394e79d2d9de9ecdc/"
   ),
 });
 const BASE_SCAN_API = "GWV3I6MRRIIDB1RA4UAIYAYGJ4KCGRR5ME";
