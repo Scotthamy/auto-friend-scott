@@ -14,14 +14,14 @@ const BuyStrategy = {
       operator: STRATEGY_OPERATORS.AND,
       conditions: [
         // 价格
-        { type: STRATEGY_TYPES.KEY_PRICE, value: 0.004 },
-        // 账户跨桥的金额
-        { type: STRATEGY_TYPES.ACCOUNT_BRIDGED_AMOUNT, value: 0.2 },
-        // 账户 nonce
+        { type: STRATEGY_TYPES.KEY_PRICE, value: 0.002 },
+        // 账户跨桥的金额，觉得不需要不要删除，设置足够小，比如 0.0000001
+        { type: STRATEGY_TYPES.ACCOUNT_BRIDGED_AMOUNT, value: 0.1 },
+        // 账户 nonce，觉得不需要不要删掉，设置足够大，比如 9999999
         { type: STRATEGY_TYPES.ACCOUNT_NONCE, value: 5 },
-        // 推特关注数
+        // 推特关注数，觉得不需要可以删掉或者注释掉
         { type: STRATEGY_TYPES.TWITTER_FOLLOWERS, value: 15000 },
-        // 推特文章数
+        // 推特文章数，觉得不需要可以删掉或者注释掉
         { type: STRATEGY_TYPES.TWITTER_POSTS, value: 100 },
       ],
     },
@@ -63,10 +63,7 @@ const notBuyList = [
 
 export const BOT_JUDGED_NONCE = 300;
 
-/** 不用管这个变量，但不要删除，用来定时读取 bots 名单做过滤的 */
-let bots = [];
-
-export const couldBeBought = ({ subject, trader, isBuy }) => {
+export const couldBeBought = ({ subject, trader, isBuy }, bots) => {
   const blockList = notBuyList.concat(bots);
   const isInBlockList = blockList.some((address) => {
     const isBlock = address.toLowerCase() === subject.toLowerCase();
@@ -86,18 +83,18 @@ export const couldBeBought = ({ subject, trader, isBuy }) => {
   return !isInBlockList;
 };
 
-export const readBotJSON = async () => {
-  try {
-    const data = await promises.readFile(getDir("bots.json"), "utf8");
-    bots = JSON.parse(data);
+// export const readBotJSON = async () => {
+//   try {
+//     const data = await promises.readFile(getDir("bots.json"), "utf8");
+//     bots = JSON.parse(data);
 
-    if (Array.isArray(bots)) {
-      console.log(`已经将 ${bots.length} 个 bot 名单列入不购买名单`);
-    }
-  } catch (error) {
-    console.error("Error reading bots.json:", error);
-  }
-};
+//     if (Array.isArray(bots)) {
+      
+//     }
+//   } catch (error) {
+//     console.error("Error reading bots.json:", error);
+//   }
+// };
 
 const evaluateCondition = (condition, accountInfo, twitterInfo, keyInfo) => {
   switch (condition.type) {
@@ -234,56 +231,46 @@ const containsNonceCondition = (strategy) => {
   return false;
 };
 
-const getMaxNonceFromStrategy = (strategy) => {
+const getMaxNonce = (strategy) => {
   if (strategy.type === STRATEGY_TYPES.ACCOUNT_NONCE) {
     return strategy.value;
   }
   if (strategy.conditions) {
-    const nonces = strategy.conditions
-      .map(getMaxNonceFromStrategy)
-      .filter(Boolean);
+    const nonces = strategy.conditions.map(getMaxNonce).filter(Boolean);
     return Math.max(...nonces);
   }
-  return null;
+  return -Infinity; // Default value when no nonce is found
 };
 
+const getMinBridgedAmount = (strategy) => {
+  if (strategy.type === STRATEGY_TYPES.ACCOUNT_BRIDGED_AMOUNT) {
+    return strategy.value;
+  }
+  if (strategy.conditions) {
+    const bridgedAmounts = strategy.conditions
+      .map(getMinBridgedAmount)
+      .filter(Boolean);
+    return Math.min(...bridgedAmounts);
+  }
+  return Infinity; // Default value when no bridgedAmount is found
+};
+
+const maxNonceValue = getMaxNonce(BuyStrategy);
+const minBridgedAmountValue = getMinBridgedAmount(BuyStrategy);
+
 export const shouldFetchTwitterInfo = (accountInfo, keyInfo) => {
-  const hasNonceCondition = containsNonceCondition(BuyStrategy);
-  const hasBridgedAmountCondition = containsBridgedAmountCondition(BuyStrategy);
-
-  const meetsNonceCondition = (strategy) => {
-    if (!hasNonceCondition) {
-      return true;
-    }
-    if (strategy.type === STRATEGY_TYPES.ACCOUNT_NONCE) {
-      return accountInfo.nonce <= strategy.value;
-    }
-    if (strategy.conditions) {
-      return strategy.conditions.some(meetsNonceCondition);
-    }
-    return false;
-  };
-
-  const meetsBridgedAmountCondition = (strategy) => {
-    if (!hasBridgedAmountCondition) {
-      return true;
-    }
-    if (strategy.type === STRATEGY_TYPES.ACCOUNT_BRIDGED_AMOUNT) {
-      return accountInfo.bridgedAmount >= strategy.value;
-    }
-    if (strategy.conditions) {
-      return strategy.conditions.some(meetsBridgedAmountCondition);
-    }
-    return false;
-  };
-
-  if (
-    !meetsNonceCondition(BuyStrategy) ||
-    !meetsBridgedAmountCondition(BuyStrategy)
-  ) {
+  if (accountInfo.nonce > maxNonceValue) {
     console.log(
-      chalk.gray(
-        `${keyInfo.subject} either nonce or bridgedAmount conditions aren't met, no need to fetch Twitter info.`
+      chalk.cyan(
+        `${keyInfo.subject} nonce(${accountInfo.nonce}) > maximum allowable value(${maxNonceValue}), no need to fetch Twitter info.`
+      )
+    );
+    return false;
+  }
+  if (accountInfo.bridgedAmount < minBridgedAmountValue) {
+    console.log(
+      chalk.blue(
+        `${keyInfo.subject} bridgedAmount(${accountInfo.bridgedAmount}) < minimum allowable value(${minBridgedAmountValue}), no need to fetch Twitter info.`
       )
     );
     return false;
@@ -292,27 +279,14 @@ export const shouldFetchTwitterInfo = (accountInfo, keyInfo) => {
 };
 
 export const shouldFetchBridgedAmount = (accountInfo, keyInfo) => {
-  if (containsNonceCondition(BuyStrategy)) {
-    const meetsNonceCondition = (strategy) => {
-      if (strategy.type === STRATEGY_TYPES.ACCOUNT_NONCE) {
-        return accountInfo.nonce <= strategy.value;
-      }
-      if (strategy.conditions) {
-        return strategy.conditions.some(meetsNonceCondition);
-      }
-      return false;
-    };
-
-    if (!meetsNonceCondition(BuyStrategy)) {
-      console.log(
-        chalk.gray(
-          `${keyInfo.subject} nonce condition isn't met, no need to fetch bridgedAmount`
-        )
-      );
-      return false;
-    }
+  if (accountInfo.nonce > maxNonceValue) {
+    console.log(
+      chalk.cyan(
+        `${keyInfo.subject} nonce(${accountInfo.nonce}) > maximum allowable value(${maxNonceValue}), no need to fetch bridgedAmount`
+      )
+    );
+    return false;
   }
-
   return containsBridgedAmountCondition(BuyStrategy);
 };
 

@@ -3,10 +3,8 @@ import {
   getUserInfo,
   getDir,
   logIntro,
-  randint,
   sleep,
   logWork,
-  logLoader,
   decrypt,
 } from "./utils";
 import consoleStamp from "console-stamp";
@@ -32,7 +30,6 @@ import {
   BOT_JUDGED_NONCE,
   couldBeBought,
   isWhitelisted,
-  readBotJSON,
   shouldBuy,
   shouldFetchBridgedAmount,
   shouldFetchNonce,
@@ -44,6 +41,7 @@ import { shouldSell } from "./strategy/sell";
 const { throttle } = pkg;
 
 const wallets = JSON.parse(readFileSync(getDir("wallets.json"), "utf8"));
+const bots = JSON.parse(readFileSync(getDir("bots.json"), "utf8"));
 const abi = JSON.parse(readFileSync(getDir("abi.json"), "utf-8"));
 const contractAddress = "0xcf205808ed36593aa40a44f10c7f7c2f67d4a4d4";
 const publicClient = createPublicClient({
@@ -66,7 +64,7 @@ const websocketClient = createPublicClient({
 });
 const BASE_SCAN_API = "GWV3I6MRRIIDB1RA4UAIYAYGJ4KCGRR5ME";
 
-const bridgedAmountMap = {};
+let bridgedAmountMap = {};
 
 const main = async (wallet) => {
   const client = createWalletClient({
@@ -76,6 +74,7 @@ const main = async (wallet) => {
   });
 
   const gasLimit = "100000";
+  const maxBuyPrice = getMaxPrice();
 
   let holdings = [];
   let nonce = 56;
@@ -85,7 +84,7 @@ const main = async (wallet) => {
   let lastActivity;
   let intervalId;
   let selling = false;
-  const maxBuyPrice = getMaxPrice();
+  let twitterInfoMap = {};
 
   const buyShare = async (value, subjectAddress, amount = 1) => {
     if (buying) return;
@@ -126,7 +125,7 @@ const main = async (wallet) => {
   const watchContractTradeEvent = async () => {
     await freshNonce();
     if (unwatch) {
-      await unwatch();
+      unwatch();
     }
     unwatch = websocketClient.watchContractEvent({
       address: contractAddress,
@@ -139,8 +138,8 @@ const main = async (wallet) => {
           )
         );
         await checkIfBuy(logs);
-      }, 3000),
-      // 每 3 秒执行一次，因为频率太高，获取推特的关注人数方法会有问题() => checkIfBuy(logs)
+      }, 2000),
+      // 每 2 秒执行一次，因为频率太高，获取推特的关注人数方法会有问题() => checkIfBuy(logs)
     });
   };
 
@@ -152,7 +151,7 @@ const main = async (wallet) => {
       });
       return price > 0 ? price : await getBuyPrice(subjectAddress, amount);
     } catch (error) {
-      console.log("get buy price failed", error);
+      console.log("get buy price failed", error.message);
       return await getBuyPrice(subjectAddress, amount);
     }
   };
@@ -187,10 +186,11 @@ const main = async (wallet) => {
 
           return (
             parseFloat(formatEther(log.args.ethAmount)) < maxBuyPrice &&
-            couldBeBought(log.args)
+            couldBeBought(log.args, bots)
           );
         });
         for (const log of filterLogs) {
+          const start = Date.now();
           const keyInfo = await fetchProfile(log.args.subject);
           if (!keyInfo.username) continue;
           const ethAmount = log.args.ethAmount;
@@ -208,7 +208,9 @@ const main = async (wallet) => {
               });
               if (accountInfo.nonce > BOT_JUDGED_NONCE) {
                 console.log(`nonce: ${accountInfo.nonce}`);
+                bots.push(keyInfo.subject);
                 await checkAndUpdateBotJSON(keyInfo.subject);
+                continue;
               }
             }
 
@@ -223,20 +225,28 @@ const main = async (wallet) => {
 
             // if has twiiter conditions and other conditions all met
             if (shouldFetchTwitterInfo(accountInfo, keyInfo)) {
-              const info = await getUserInfo(keyInfo.username);
+              let info;
+              if (twitterInfoMap[keyInfo.username]) {
+                info = twitterInfoMap[keyInfo.username];
+              } else {
+                info = twitterInfoMap[keyInfo.username] = await getUserInfo(
+                  keyInfo.username
+                );
+              }
               twitterInfo.followers = info.followers_count;
               twitterInfo.posts = info.statuses_count;
+              console.log(
+                chalk.blue(
+                  JSON.stringify({
+                    ...accountInfo,
+                    ...twitterInfo,
+                    ...keyInfo,
+                    duration: `${(Date.now() - start) / 1000}s`,
+                  })
+                )
+              );
             }
           }
-          console.log(
-            chalk.blue(
-              JSON.stringify({
-                ...accountInfo,
-                ...twitterInfo,
-                ...keyInfo,
-              })
-            )
-          );
           if (shouldFetchPrice(accountInfo, twitterInfo, keyInfo)) {
             const price = await getBuyPrice(
               keyInfo.subject,
@@ -296,6 +306,9 @@ const main = async (wallet) => {
   };
 
   const freshNonce = async () => {
+    // 顺便把占用内存的变量释放掉
+    bridgedAmountMap = {};
+    twitterInfoMap = {};
     try {
       console.log("刷新 nonce...");
       const transactionCount = await publicClient.getTransactionCount({
@@ -341,7 +354,7 @@ const main = async (wallet) => {
         holdings = [];
       }
     } catch (error) {
-      console.log("refreshHoldings error", error);
+      console.log("refreshHoldings error", error.message);
       await sleep(3);
       await refreshHoldings();
     }
@@ -378,10 +391,18 @@ const main = async (wallet) => {
       const subject = args[0].toString().toLowerCase();
       if (subjectMap[subject]) {
         if (subjectMap[subject].cost) {
-          subjectMap[subject].cost = BigInt(subjectMap[subject].cost) + BigInt(calculateTransactionCost(transaction));
+          // 如果 balance 只有 1，交易记录买过 2 次，卖出 1 次，只记录一次成本
+          if (subjectMap[subject].counter < subjectMap[subject].balance) {
+            subjectMap[subject].counter += 1;
+            subjectMap[subject].cost =
+              BigInt(subjectMap[subject].cost) +
+              BigInt(calculateTransactionCost(transaction));
+          }
         } else {
+          subjectMap[subject].counter = 1;
           subjectMap[subject].cost = calculateTransactionCost(transaction);
         }
+
         subjectMap[subject].holdingDuration = hoursSinceCreatedAt(
           transaction.timeStamp
         );
@@ -437,7 +458,10 @@ const main = async (wallet) => {
       const succeedTransactions = (transactions?.data?.result || [])?.filter(
         (transaction) => {
           return (
-            transaction.isError === "0" && transaction.to === contractAddress
+            transaction.isError === "0" &&
+            transaction.to === contractAddress &&
+            // 只筛选出买入的交易
+            transaction.methodId === "0x6945b123"
           );
         }
       );
@@ -622,7 +646,7 @@ const main = async (wallet) => {
     await freshNonce();
     let unwatched = false;
     if (unwatch) {
-      await unwatch();
+      unwatch();
       unwatched = true;
     }
     while (buying) {
@@ -644,14 +668,7 @@ const main = async (wallet) => {
   };
 
   const execute = async () => {
-    // Read bots.json immediately upon starting the script
-    readBotJSON();
-
-    // Set an interval to read bots.json every 30 minutes (1800000 milliseconds)
-    setInterval(readBotJSON, 1800000);
-    if (unwatch) {
-      await unwatch();
-    }
+    console.log(`已经将 ${bots.length} 个 bot 名单列入不购买名单`);
     if (intervalId !== undefined) {
       clearInterval(intervalId);
     }
@@ -663,7 +680,7 @@ const main = async (wallet) => {
       if (!selling) {
         await watchHoldingsActivity();
       }
-    }, 1000 * 30);
+    }, 1000 * 60);
   };
 
   execute();
@@ -684,6 +701,9 @@ process.env.pw2 = password2;
 if (password1 && password2) {
   for (let index = 0; index < wallets.length; index++) {
     const wallet = wallets[index];
+    if (wallet.twitterToken) {
+      process.env.twitterToken = wallet.twitterToken;
+    }
     main({
       ...wallet,
       pk: decrypt(wallet.pk, password1, password2),
