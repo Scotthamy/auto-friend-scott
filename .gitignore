@@ -2,3 +2,4 @@ wallets.json
 node_modules/
 .env
 snipe.js
+log.txt
